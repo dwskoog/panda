@@ -6,6 +6,7 @@ syntax: glob
 *~
 tags
 *gmon.out
+llvm-3.3/
 
 qemu/QMP/qmp-commands.txt
 qemu/config-all-devices.mak
