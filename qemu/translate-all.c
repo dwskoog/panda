@@ -71,7 +71,7 @@ void cpu_gen_init(void)
    '*gen_code_size_ptr' contains the size of the generated code (host
    code).
 */
-int cpu_gen_code(CPUState *env, TranslationBlock *tb, int *gen_code_size_ptr)
+int cpu_gen_code(CPUArchState *env, TranslationBlock *tb, int *gen_code_size_ptr)
 {
     TCGContext *s = &tcg_ctx;
     uint8_t *gen_code_buf;
@@ -148,7 +148,7 @@ int cpu_gen_code(CPUState *env, TranslationBlock *tb, int *gen_code_size_ptr)
 /* The cpu state corresponding to 'searched_pc' is restored.
  */
 int cpu_restore_state(TranslationBlock *tb,
-                      CPUState *env, unsigned long searched_pc)
+                      CPUArchState *env, uintptr_t searched_pc)
 {
     // PANDA instrumentation: CPU restore state
     panda_cb_list *plist;
@@ -159,7 +159,7 @@ int cpu_restore_state(TranslationBlock *tb,
  
     TCGContext *s = &tcg_ctx;
     int j;
-    unsigned long tc_ptr;
+    uintptr_t tc_ptr;
 #ifdef CONFIG_PROFILER
     int64_t ti;
 #endif
@@ -186,7 +186,7 @@ int cpu_restore_state(TranslationBlock *tb,
 #endif
 
     /* find opc index corresponding to search_pc */
-    tc_ptr = (unsigned long)tb->tc_ptr;
+    tc_ptr = (uintptr_t)tb->tc_ptr;
     if (searched_pc < tc_ptr)
         return -1;
 

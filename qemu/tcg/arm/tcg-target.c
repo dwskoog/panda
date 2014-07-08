@@ -842,6 +842,12 @@ static inline void tcg_out_st8(TCGContext *s, int cond,
         tcg_out_st8_12(s, cond, rd, rn, offset);
 }
 
+/* The _goto case is normally between TBs within the same code buffer,
+ * and with the code buffer limited to 16MB we shouldn't need the long
+ * case.
+ *
+ * .... except to the prologue that is in its own buffer.
+ */
 static inline void tcg_out_goto(TCGContext *s, int cond, uint32_t addr)
 {
     int32_t val;
@@ -855,22 +861,20 @@ static inline void tcg_out_goto(TCGContext *s, int cond, uint32_t addr)
     if (val - 8 < 0x01fffffd && val - 8 > -0x01fffffd)
         tcg_out_b(s, cond, val);
     else {
-#if 1
-        tcg_abort();
-#else
         if (cond == COND_AL) {
             tcg_out_ld32_12(s, COND_AL, TCG_REG_PC, TCG_REG_PC, -4);
-            tcg_out32(s, addr); /* XXX: This is l->u.value, can we use it? */
+            tcg_out32(s, addr);
         } else {
             tcg_out_movi32(s, cond, TCG_REG_R8, val - 8);
             tcg_out_dat_reg(s, cond, ARITH_ADD,
                             TCG_REG_PC, TCG_REG_PC,
                             TCG_REG_R8, SHIFT_IMM_LSL(0));
         }
-#endif
     }
 }
 
+/* The call case is mostly used for helpers - so it's not unreasonable
+ * for them to be beyond branch range */
 static inline void tcg_out_call(TCGContext *s, uint32_t addr)
 {
     int32_t val;
@@ -887,20 +891,9 @@ static inline void tcg_out_call(TCGContext *s, uint32_t addr)
             tcg_out_bl(s, COND_AL, val);
         }
     } else {
-#if 1
-        tcg_abort();
-#else
-        if (cond == COND_AL) {
-            tcg_out_dat_imm(s, cond, ARITH_ADD, TCG_REG_R14, TCG_REG_PC, 4);
-            tcg_out_ld32_12(s, COND_AL, TCG_REG_PC, TCG_REG_PC, -4);
-            tcg_out32(s, addr); /* XXX: This is l->u.value, can we use it? */
-        } else {
-            tcg_out_movi32(s, cond, TCG_REG_R9, addr);
-            tcg_out_dat_reg(s, cond, ARITH_MOV, TCG_REG_R14, 0,
-                            TCG_REG_PC, SHIFT_IMM_LSL(0));
-            tcg_out_bx(s, cond, TCG_REG_R9);
-        }
-#endif
+        tcg_out_dat_imm(s, COND_AL, ARITH_ADD, TCG_REG_R14, TCG_REG_PC, 4);
+        tcg_out_ld32_12(s, COND_AL, TCG_REG_PC, TCG_REG_PC, -4);
+        tcg_out32(s, addr);
     }
 }
 
@@ -938,6 +931,27 @@ static inline void tcg_out_goto_label(TCGContext *s, int cond, int label_index)
 
 #include "panda_plugin.h"
 
+#ifdef CONFIG_TCG_PASS_AREG0
+/* helper signature: helper_ld_mmu(CPUState *env, target_ulong addr,
+   int mmu_idx) */
+static const void * const qemu_ld_helpers[4] = {
+    helper_ldb_mmu,
+    helper_ldw_mmu,
+    helper_ldl_mmu,
+    helper_ldq_mmu,
+};
+
+/* helper signature: helper_st_mmu(CPUState *env, target_ulong addr,
+   uintxx_t val, int mmu_idx) */
+static const void * const qemu_st_helpers[4] = {
+    helper_stb_mmu,
+    helper_stw_mmu,
+    helper_stl_mmu,
+    helper_stq_mmu,
+};
+#else
+/* legacy helper signature: __ld_mmu(target_ulong addr, int
+   mmu_idx) */
 static void *qemu_ld_helpers[4] = {
     __ldb_mmu,
     __ldw_mmu,
@@ -945,6 +959,8 @@ static void *qemu_ld_helpers[4] = {
     __ldq_mmu,
 };
 
+/* legacy helper signature: __st_mmu(target_ulong addr, uintxx_t val,
+   int mmu_idx) */
 static void *qemu_st_helpers[4] = {
     __stb_mmu,
     __stw_mmu,
@@ -967,6 +983,7 @@ static void *qemu_st_helpers_panda[4] = {
     __stq_mmu_panda,
 };
 
+#endif
 #endif
 
 #define TLB_SHIFT	(CPU_TLB_ENTRY_BITS + CPU_TLB_BITS)
@@ -1015,10 +1032,10 @@ static inline void tcg_out_qemu_ld(TCGContext *s, const TCGArg *args, int opc)
     tcg_out_dat_reg(s, COND_AL, ARITH_ADD, TCG_REG_R0, TCG_AREG0,
                     TCG_REG_R0, SHIFT_IMM_LSL(CPU_TLB_ENTRY_BITS));
     /* In the
-     *  ldr r1 [r0, #(offsetof(CPUState, tlb_table[mem_index][0].addr_read))]
+     *  ldr r1 [r0, #(offsetof(CPUArchState, tlb_table[mem_index][0].addr_read))]
      * below, the offset is likely to exceed 12 bits if mem_index != 0 and
      * not exceed otherwise, so use an
-     *  add r0, r0, #(mem_index * sizeof *CPUState.tlb_table)
+     *  add r0, r0, #(mem_index * sizeof *CPUArchState.tlb_table)
      * before.
      */
     if (mem_index)
@@ -1026,7 +1043,7 @@ static inline void tcg_out_qemu_ld(TCGContext *s, const TCGArg *args, int opc)
                         (mem_index << (TLB_SHIFT & 1)) |
                         ((16 - (TLB_SHIFT >> 1)) << 8));
     tcg_out_ld32_12(s, COND_AL, TCG_REG_R1, TCG_REG_R0,
-                    offsetof(CPUState, tlb_table[0][0].addr_read));
+                    offsetof(CPUArchState, tlb_table[0][0].addr_read));
     tcg_out_dat_reg(s, COND_AL, ARITH_CMP, 0, TCG_REG_R1,
                     TCG_REG_R8, SHIFT_IMM_LSL(TARGET_PAGE_BITS));
     /* Check alignment.  */
@@ -1037,12 +1054,12 @@ static inline void tcg_out_qemu_ld(TCGContext *s, const TCGArg *args, int opc)
     /* XXX: possibly we could use a block data load or writeback in
      * the first access.  */
     tcg_out_ld32_12(s, COND_EQ, TCG_REG_R1, TCG_REG_R0,
-                    offsetof(CPUState, tlb_table[0][0].addr_read) + 4);
+                    offsetof(CPUArchState, tlb_table[0][0].addr_read) + 4);
     tcg_out_dat_reg(s, COND_EQ, ARITH_CMP, 0,
                     TCG_REG_R1, addr_reg2, SHIFT_IMM_LSL(0));
 #  endif
     tcg_out_ld32_12(s, COND_EQ, TCG_REG_R1, TCG_REG_R0,
-                    offsetof(CPUState, tlb_table[0][0].addend));
+                    offsetof(CPUArchState, tlb_table[0][0].addend));
 
     switch (opc) {
     case 0:
@@ -1100,6 +1117,19 @@ static inline void tcg_out_qemu_ld(TCGContext *s, const TCGArg *args, int opc)
                     TCG_REG_R1, 0, addr_reg2, SHIFT_IMM_LSL(0));
     tcg_out_dat_imm(s, COND_AL, ARITH_MOV, TCG_REG_R2, 0, mem_index);
 # endif
+#ifdef CONFIG_TCG_PASS_AREG0
+    /* XXX/FIXME: suboptimal and incorrect for 64 bit */
+    tcg_out_dat_reg(s, COND_AL, ARITH_MOV,
+                    tcg_target_call_iarg_regs[2], 0,
+                    tcg_target_call_iarg_regs[1], SHIFT_IMM_LSL(0));
+    tcg_out_dat_reg(s, COND_AL, ARITH_MOV,
+                    tcg_target_call_iarg_regs[1], 0,
+                    tcg_target_call_iarg_regs[0], SHIFT_IMM_LSL(0));
+
+    tcg_out_dat_reg(s, COND_AL, ARITH_MOV,
+                    tcg_target_call_iarg_regs[0], 0, TCG_AREG0,
+                    SHIFT_IMM_LSL(0));
+#endif
     if(panda_use_memcb)
         tcg_out_call(s, (tcg_target_long) qemu_ld_helpers_panda[s_bits]);
     else
@@ -1238,10 +1268,10 @@ static inline void tcg_out_qemu_st(TCGContext *s, const TCGArg *args, int opc)
     tcg_out_dat_reg(s, COND_AL, ARITH_ADD, TCG_REG_R0,
                     TCG_AREG0, TCG_REG_R0, SHIFT_IMM_LSL(CPU_TLB_ENTRY_BITS));
     /* In the
-     *  ldr r1 [r0, #(offsetof(CPUState, tlb_table[mem_index][0].addr_write))]
+     *  ldr r1 [r0, #(offsetof(CPUArchState, tlb_table[mem_index][0].addr_write))]
      * below, the offset is likely to exceed 12 bits if mem_index != 0 and
      * not exceed otherwise, so use an
-     *  add r0, r0, #(mem_index * sizeof *CPUState.tlb_table)
+     *  add r0, r0, #(mem_index * sizeof *CPUArchState.tlb_table)
      * before.
      */
     if (mem_index)
@@ -1249,7 +1279,7 @@ static inline void tcg_out_qemu_st(TCGContext *s, const TCGArg *args, int opc)
                         (mem_index << (TLB_SHIFT & 1)) |
                         ((16 - (TLB_SHIFT >> 1)) << 8));
     tcg_out_ld32_12(s, COND_AL, TCG_REG_R1, TCG_REG_R0,
-                    offsetof(CPUState, tlb_table[0][0].addr_write));
+                    offsetof(CPUArchState, tlb_table[0][0].addr_write));
     tcg_out_dat_reg(s, COND_AL, ARITH_CMP, 0, TCG_REG_R1,
                     TCG_REG_R8, SHIFT_IMM_LSL(TARGET_PAGE_BITS));
     /* Check alignment.  */
@@ -1260,12 +1290,12 @@ static inline void tcg_out_qemu_st(TCGContext *s, const TCGArg *args, int opc)
     /* XXX: possibly we could use a block data load or writeback in
      * the first access.  */
     tcg_out_ld32_12(s, COND_EQ, TCG_REG_R1, TCG_REG_R0,
-                    offsetof(CPUState, tlb_table[0][0].addr_write) + 4);
+                    offsetof(CPUArchState, tlb_table[0][0].addr_write) + 4);
     tcg_out_dat_reg(s, COND_EQ, ARITH_CMP, 0,
                     TCG_REG_R1, addr_reg2, SHIFT_IMM_LSL(0));
 #  endif
     tcg_out_ld32_12(s, COND_EQ, TCG_REG_R1, TCG_REG_R0,
-                    offsetof(CPUState, tlb_table[0][0].addend));
+                    offsetof(CPUArchState, tlb_table[0][0].addend));
 
     switch (opc) {
     case 0:
@@ -1368,6 +1398,23 @@ static inline void tcg_out_qemu_st(TCGContext *s, const TCGArg *args, int opc)
         break;
     }
 # endif
+
+#ifdef CONFIG_TCG_PASS_AREG0
+    /* XXX/FIXME: suboptimal and incorrect for 64 bit */
+    tcg_out_dat_reg(s, COND_AL, ARITH_MOV,
+                    tcg_target_call_iarg_regs[3], 0,
+                    tcg_target_call_iarg_regs[2], SHIFT_IMM_LSL(0));
+    tcg_out_dat_reg(s, COND_AL, ARITH_MOV,
+                    tcg_target_call_iarg_regs[2], 0,
+                    tcg_target_call_iarg_regs[1], SHIFT_IMM_LSL(0));
+    tcg_out_dat_reg(s, COND_AL, ARITH_MOV,
+                    tcg_target_call_iarg_regs[1], 0,
+                    tcg_target_call_iarg_regs[0], SHIFT_IMM_LSL(0));
+
+    tcg_out_dat_reg(s, COND_AL, ARITH_MOV,
+                    tcg_target_call_iarg_regs[0], 0, TCG_AREG0,
+                    SHIFT_IMM_LSL(0));
+#endif
     if(panda_use_memcb)
         tcg_out_call(s, (tcg_target_long) qemu_st_helpers_panda[s_bits]);
     else
@@ -1837,7 +1884,7 @@ static void tcg_target_init(TCGContext *s)
     tcg_regset_set_reg(s->reserved_regs, TCG_REG_PC);
 
     tcg_add_target_add_op_defs(arm_op_defs);
-    tcg_set_frame(s, TCG_AREG0, offsetof(CPUState, temp_buf),
+    tcg_set_frame(s, TCG_AREG0, offsetof(CPUArchState, temp_buf),
                   CPU_TEMP_BUF_NLONGS * sizeof(long));
 }
 

@@ -12,6 +12,7 @@ void cpu_synchronize_all_post_reset(void);
 void cpu_synchronize_all_post_init(void);
 
 void log_all_cpu_states(void);
+void qtest_clock_warp(int64_t dest);
 
 /* vl.c */
 extern int smp_cores;
