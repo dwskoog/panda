@@ -514,9 +514,9 @@ dependencies = [
 
 [[package]]
 name = "panda-re"
-version = "0.48.0"
+version = "0.49.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f3903c9c270a4c9ac728c2491432ea810a92a318d7c435220a5d8b9da87111b1"
+checksum = "69681c72aa22165810436f7dc67935c6aea4ae453d50558844c91d63a3346584"
 dependencies = [
  "array-init",
  "dirs",
