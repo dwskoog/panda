@@ -203,7 +203,7 @@ jobs:
       uses: actions/download-artifact@v5
       with:
         pattern: pandare_*
-        path: dist/
+        path: debs/
     - name: Download all the artifacts
       uses: actions/download-artifact@v5
       with:
@@ -227,3 +227,4 @@ jobs:
         name: ${{ needs.create_release.outputs.v-version }} @ ${{ github.ref }}
         files: |
           dist/*
+          debs/*
