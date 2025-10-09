@@ -200,8 +200,14 @@ jobs:
 
     steps:
     - name: Download all the artifacts
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v5
       with:
+        pattern: pandare_*
+        path: dist/
+    - name: Download all the artifacts
+      uses: actions/download-artifact@v5
+      with:
+        name: pypanda
         path: dist/
         
     - name: Publish distribution 📦 to PyPI
