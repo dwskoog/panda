@@ -107,12 +107,12 @@ jobs:
           tags: |
             ${{ env.PANDA_TARGET }}/pandare/panda:${{ github.sha }}
           cache-from: |
-            type=registry,ref=${{ env.PANDA_ARC_REGISTRY }}/pandare/panda:cache,mode=max
-            type=registry,ref=${{ env.PANDA_ARC_REGISTRY }}/pandare/panda:cache-PR-${{github.event.number}},mode=max
+            type=registry,ref=${{ env.PANDA_TARGET }}/pandare/panda:cache,mode=max
+            type=registry,ref=${{ env.PANDA_TARGET }}/pandare/panda:cache-PR-${{github.event.number}},mode=max
           cache-to: |
-            type=registry,ref=${{ env.PANDA_ARC_REGISTRY }}/pandare/panda:cache,mode=max
-            type=registry,ref=${{ env.PANDA_ARC_REGISTRY }}/pandare/panda:cache-PR-${{github.event.number}},mode=max
-            type=registry,ref=${{ env.PANDA_ARC_REGISTRY }}/pandare/panda:cache_last_published,mode=max
+            type=registry,ref=${{ env.PANDA_TARGET }}/pandare/panda:cache,mode=max
+            type=registry,ref=${{ env.PANDA_TARGET }}/pandare/panda:cache-PR-${{github.event.number}},mode=max
+            type=registry,ref=${{ env.PANDA_TARGET }}/pandare/panda:cache_last_published,mode=max
           build-args: |
             REGISTRY=${{ env.PANDA_CACHE }}
       # - name: Minimal test of built container # Just test to see if one of our binaries is built
