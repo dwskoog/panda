@@ -101,11 +101,11 @@ jobs:
       - name: Build panda:latest
         uses: docker/build-push-action@v6.18.0
         with:
-          push: true
+          push: false # set this to true if you we start using the container
           context: ${{ github.workspace }}
           target: developer
           tags: |
-            ${{ env.PANDA_ARC_REGISTRY }}/pandare/panda:${{ github.sha }}
+            ${{ env.PANDA_TARGET }}/pandare/panda:${{ github.sha }}
           cache-from: |
             type=registry,ref=${{ env.PANDA_ARC_REGISTRY }}/pandare/panda:cache,mode=max
             type=registry,ref=${{ env.PANDA_ARC_REGISTRY }}/pandare/panda:cache-PR-${{github.event.number}},mode=max
