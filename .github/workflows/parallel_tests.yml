@@ -103,7 +103,7 @@ jobs:
         with:
           push: false # set this to true if you we start using the container
           context: ${{ github.workspace }}
-          target: developer
+          target: panda
           tags: |
             ${{ env.PANDA_TARGET }}/pandare/panda:${{ github.sha }}
           cache-from: |
